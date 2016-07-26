@@ -21,9 +21,11 @@ using Microsoft.Win32;
 using Microsoft.Web.Administration;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
+using Newtonsoft.Json;
 
 namespace LetsEncrypt.ACME.Simple {
     class Program {
+        private static Dictionary<string, DateTime> _AuthorizedIdentifiers;
         private static string _BaseUri = "https://acme-v01.api.letsencrypt.org/";
         private static string _CertificateStore = "WebHosting";
         private static AcmeClient _Client;
@@ -66,6 +68,8 @@ namespace LetsEncrypt.ACME.Simple {
             CreateConfigPath();
 
             try {
+                LoadAuthorizedIdentifiers();
+
                 using (var signer = new RS256Signer()) {
                     signer.Init();
 
@@ -111,6 +115,8 @@ namespace LetsEncrypt.ACME.Simple {
                     Console.WriteLine(e);
                 }
                 Console.ResetColor();
+            } finally {
+                SaveAuthorizedIdentifiers();
             }
 
             Console.WriteLine("Press enter to continue.");
@@ -507,74 +513,83 @@ namespace LetsEncrypt.ACME.Simple {
             return null;
         }
 
-        public static AuthorizationState Authorize(Binding binding) {
+        public static bool Authorize(Binding binding) {
             Console.WriteLine(
                 $"\nAuthorizing Identifier {binding.Hostname} Using Challenge Type {AcmeProtocol.CHALLENGE_TYPE_HTTP}");
             Log.Information("Authorizing Identifier {dnsIdentifier} Using Challenge Type {CHALLENGE_TYPE_HTTP}",
                 binding.Hostname, AcmeProtocol.CHALLENGE_TYPE_HTTP);
-            var authzState = _Client.AuthorizeIdentifier(binding.Hostname);
-            var challenge = _Client.DecodeChallenge(authzState, AcmeProtocol.CHALLENGE_TYPE_HTTP);
-            var httpChallenge = challenge.Challenge as HttpChallenge;
 
-            // We need to strip off any leading '/' in the path
-            var filePath = httpChallenge.FilePath;
-            if (filePath.StartsWith("/", StringComparison.OrdinalIgnoreCase))
-                filePath = filePath.Substring(1);
-            var answerPath = Environment.ExpandEnvironmentVariables(Path.Combine(binding.WebRootPath, filePath));
+            if (_AuthorizedIdentifiers.ContainsKey(binding.Hostname)) {
+                Console.WriteLine("We already have authorization until " + _AuthorizedIdentifiers[binding.Hostname].ToLocalTime());
+                Log.Information("We already have authorization until " + _AuthorizedIdentifiers[binding.Hostname].ToLocalTime());
+                return true;
+            } else {
+                var authzState = _Client.AuthorizeIdentifier(binding.Hostname);
+                var challenge = _Client.DecodeChallenge(authzState, AcmeProtocol.CHALLENGE_TYPE_HTTP);
+                var httpChallenge = challenge.Challenge as HttpChallenge;
 
-            CreateAuthorizationFile(answerPath, httpChallenge.FileContent);
+                // We need to strip off any leading '/' in the path
+                var filePath = httpChallenge.FilePath;
+                if (filePath.StartsWith("/", StringComparison.OrdinalIgnoreCase))
+                    filePath = filePath.Substring(1);
+                var answerPath = Environment.ExpandEnvironmentVariables(Path.Combine(binding.WebRootPath, filePath));
 
-            BeforeAuthorize(binding, answerPath, httpChallenge.Token);
+                CreateAuthorizationFile(answerPath, httpChallenge.FileContent);
 
-            var answerUri = new Uri(httpChallenge.FileUrl);
+                BeforeAuthorize(binding, answerPath, httpChallenge.Token);
 
-            Console.WriteLine($"Waiting for site to warmup...");
-            WarmupSite(answerUri);
+                var answerUri = new Uri(httpChallenge.FileUrl);
 
-            Console.WriteLine($" Answer should now be browsable at {answerUri}");
-            Log.Information("Answer should now be browsable at {answerUri}", answerUri);
+                Console.WriteLine($"Waiting for site to warmup...");
+                WarmupSite(answerUri);
 
-            try {
-                Console.WriteLine(" Submitting answer");
-                Log.Information("Submitting answer");
-                authzState.Challenges = new AuthorizeChallenge[] { challenge };
-                _Client.SubmitChallengeAnswer(authzState, AcmeProtocol.CHALLENGE_TYPE_HTTP, true);
+                Console.WriteLine($" Answer should now be browsable at {answerUri}");
+                Log.Information("Answer should now be browsable at {answerUri}", answerUri);
 
-                // have to loop to wait for server to stop being pending.
-                // TODO: put timeout/retry limit in this loop
-                while (authzState.Status == "pending") {
-                    Console.WriteLine(" Refreshing authorization");
-                    Log.Information("Refreshing authorization");
-                    Thread.Sleep(4000); // this has to be here to give ACME server a chance to think
-                    var newAuthzState = _Client.RefreshIdentifierAuthorization(authzState);
-                    if (newAuthzState.Status != "pending")
-                        authzState = newAuthzState;
-                }
+                try {
+                    Console.WriteLine(" Submitting answer");
+                    Log.Information("Submitting answer");
+                    authzState.Challenges = new AuthorizeChallenge[] { challenge };
+                    _Client.SubmitChallengeAnswer(authzState, AcmeProtocol.CHALLENGE_TYPE_HTTP, true);
 
-                Console.WriteLine($" Authorization Result: {authzState.Status}");
-                Log.Information("Auth Result {Status}", authzState.Status);
-                if (authzState.Status == "invalid") {
-                    Log.Error("Authorization Failed {Status}", authzState.Status);
-                    Log.Debug("Full Error Details {@authzState}", authzState);
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine(
-                        "\n******************************************************************************");
-                    Console.WriteLine($"The ACME server was probably unable to reach {answerUri}");
-                    Log.Error("Unable to reach {answerUri}", answerUri);
+                    // have to loop to wait for server to stop being pending.
+                    // TODO: put timeout/retry limit in this loop
+                    while (authzState.Status == "pending") {
+                        Console.WriteLine(" Refreshing authorization");
+                        Log.Information("Refreshing authorization");
+                        Thread.Sleep(4000); // this has to be here to give ACME server a chance to think
+                        var newAuthzState = _Client.RefreshIdentifierAuthorization(authzState);
+                        if (newAuthzState.Status != "pending")
+                            authzState = newAuthzState;
+                    }
 
-                    Console.WriteLine("\nCheck in a browser to see if the answer file is being served correctly.");
+                    Console.WriteLine($" Authorization Result: {authzState.Status}");
+                    Log.Information("Auth Result {Status}", authzState.Status);
+                    if (authzState.Status == "invalid") {
+                        Log.Error("Authorization Failed {Status}", authzState.Status);
+                        Log.Debug("Full Error Details {@authzState}", authzState);
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine(
+                            "\n******************************************************************************");
+                        Console.WriteLine($"The ACME server was probably unable to reach {answerUri}");
+                        Log.Error("Unable to reach {answerUri}", answerUri);
 
-                    OnAuthorizeFail(binding);
+                        Console.WriteLine("\nCheck in a browser to see if the answer file is being served correctly.");
 
-                    Console.WriteLine(
-                        "\n******************************************************************************");
-                    Console.ResetColor();
-                }
+                        OnAuthorizeFail(binding);
 
-                return authzState;
-            } finally {
-                if (authzState.Status == "valid") {
-                    DeleteAuthorization(answerPath, httpChallenge.Token, binding.WebRootPath, filePath);
+                        Console.WriteLine(
+                            "\n******************************************************************************");
+                        Console.ResetColor();
+                    } else if (authzState.Status == "valid") {
+                        _AuthorizedIdentifiers.Add(binding.Hostname, (DateTime)authzState.Expires);
+                    }
+
+                    return (authzState.Status == "valid");
+                } finally {
+                    if (authzState.Status == "valid") {
+                        DeleteAuthorization(answerPath, httpChallenge.Token, binding.WebRootPath, filePath);
+                    }
                 }
             }
         }
@@ -599,8 +614,7 @@ namespace LetsEncrypt.ACME.Simple {
 
             if (_Options.ShouldGenerateCertificate()) {
                 foreach (var Binding in bindings) {
-                    var auth = Authorize(Binding);
-                    if (auth.Status != "valid") {
+                    if (!Authorize(Binding)) {
                         Console.WriteLine($"Hostname {Binding.Hostname} on IP {Binding.IPAddress} failed to authorize");
                         Log.Error($"Hostname {Binding.Hostname} on IP {Binding.IPAddress} failed to authorize");
                         Result = false;
@@ -703,6 +717,7 @@ namespace LetsEncrypt.ACME.Simple {
                             }
                         }
                     } catch (Exception ex) {
+                        Console.WriteLine("Exception: " + ex.Message + " while processing " + UniqueIPAddress);
                         // TODOX Don't let one bad IP screw it up for the rest
                         // TODOX Maybe record the failed IPs and then output a command at the end that will re-process just that one IP
                         // TODOX Take the existing options into account (ie include --test if it was used for the current process)
@@ -765,6 +780,23 @@ namespace LetsEncrypt.ACME.Simple {
             }
         }
 
+        private static void LoadAuthorizedIdentifiers() {
+            string Filename = Path.Combine(_ConfigPath, "AuthorizedIdentifiers.json");
+            if (File.Exists(Filename)) {
+                // Load previously authorized identifiers
+                _AuthorizedIdentifiers = JsonConvert.DeserializeObject<Dictionary<string, DateTime>>(File.ReadAllText(Filename));
+
+                // Remove expired entries (subtract 1 day just to ensure that we don't try to use an expired authorization)
+                var Yesterday = DateTime.UtcNow.AddDays(-1);
+                var ExpiredEntries = _AuthorizedIdentifiers.Where(x => x.Value < Yesterday).ToList();
+                foreach (var ExpiredEntry in ExpiredEntries) {
+                    _AuthorizedIdentifiers.Remove(ExpiredEntry.Key);
+                }
+            } else {
+                _AuthorizedIdentifiers = new Dictionary<string, DateTime>();
+            }
+        }
+
         public static void OnAuthorizeFail(Binding binding) {
             Console.WriteLine(@"
 
@@ -778,6 +810,11 @@ at " + _Web_ConfigXmlPath);
             Log.Error(
                 "Authorize failed: This could be caused by IIS not being setup to handle extensionless static files.Here's how to fix that: 1.In IIS manager goto Site/ Server->Handler Mappings->View Ordered List 2.Move the StaticFile mapping above the ExtensionlessUrlHandler mappings. (like this http://i.stack.imgur.com/nkvrL.png) 3.If you need to make changes to your web.config file, update the one at {_sourceFilePath}",
                 _Web_ConfigXmlPath);
+        }
+
+        private static void SaveAuthorizedIdentifiers() {
+            string Filename = Path.Combine(_ConfigPath, "AuthorizedIdentifiers.json");
+            File.WriteAllText(Filename, JsonConvert.SerializeObject(_AuthorizedIdentifiers));
         }
 
         private static void UpdateBindings(List<Binding> bindings, string pfxFilename, X509Store store, X509Certificate2 certificate) {
