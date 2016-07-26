@@ -25,19 +25,10 @@ namespace LetsEncrypt.ACME.Simple.Properties {
         
         [global::System.Configuration.ApplicationScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("yyyy/M/d h:m:s tt")]
+        [global::System.Configuration.DefaultSettingValueAttribute("yyyy/MM/dd h:mm:ss")]
         public string FileDateFormat {
             get {
                 return ((string)(this["FileDateFormat"]));
-            }
-        }
-        
-        [global::System.Configuration.ApplicationScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("")]
-        public string PFXPassword {
-            get {
-                return ((string)(this["PFXPassword"]));
             }
         }
         
@@ -47,51 +38,6 @@ namespace LetsEncrypt.ACME.Simple.Properties {
         public int RSAKeyBits {
             get {
                 return ((int)(this["RSAKeyBits"]));
-            }
-        }
-        
-        [global::System.Configuration.ApplicationScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("50")]
-        public int HostsPerPage {
-            get {
-                return ((int)(this["HostsPerPage"]));
-            }
-        }
-        
-        [global::System.Configuration.ApplicationScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("")]
-        public string CertificatePath {
-            get {
-                return ((string)(this["CertificatePath"]));
-            }
-        }
-        
-        [global::System.Configuration.ApplicationScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("60")]
-        public float RenewalDays {
-            get {
-                return ((float)(this["RenewalDays"]));
-            }
-        }
-        
-        [global::System.Configuration.ApplicationScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("WebHosting")]
-        public string CertificateStore {
-            get {
-                return ((string)(this["CertificateStore"]));
-            }
-        }
-        
-        [global::System.Configuration.ApplicationScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("True")]
-        public bool CleanupFolders {
-            get {
-                return ((bool)(this["CleanupFolders"]));
             }
         }
     }
