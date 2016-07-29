@@ -123,6 +123,8 @@ namespace LetsEncrypt.ACME.Simple {
         }
 
         public static bool Authorize(Binding binding) {
+            RetryAfterInvalidAuthorization: // If LetsEncrypt says a challenge is invalid, and the user hits Y to retry, it'll jump back up here
+
             Log();
             Log($"Authorizing Identifier {binding.Hostname} via {AcmeProtocol.CHALLENGE_TYPE_HTTP}");
             if (_AuthorizedIdentifiers.ContainsKey(binding.Hostname)) {
@@ -147,23 +149,56 @@ namespace LetsEncrypt.ACME.Simple {
 
                 // Warmup the answer url
                 var AnswerUrl = new Uri(HttpChallenge.FileUrl);
-                Log($" - Warming up {AnswerUrl}");
-                try {
-                    WebRequest.Create(AnswerUrl).GetResponse();
-                } catch (Exception ex) {
-                    Log($"   - EXCEPTION: {ex}");
+                int TryNumber = 1;
+                while (true) {
+                    int x = Console.CursorLeft;
+                    int y = Console.CursorTop;
+
+                    Log($" - Warming up {AnswerUrl} (Try #{TryNumber++})");
+                    try {
+                        using (var WC = new WebClient()) {
+                            WC.Headers.Add("user-agent", "Mozilla/5.0 (compatible; Let's Encrypt validation server;  https://www.letsencrypt.org)");
+                            string Response = WC.DownloadString(AnswerUrl);
+                            if (Response == HttpChallenge.FileContent) {
+                                break; // Got the response we want, so exit the loop and let LetsEncrypt retrieve the answer
+                            }
+                        }
+                    } catch (WebException wex) {
+                        Log($"   - WEB EXCEPTION ({wex.Status}): {wex.Message}");
+                    } catch (Exception ex) {
+                        Log($"   - EXCEPTION: {ex.Message}");
+                    }
+
+                    // If we get here we didn't get the response we want -- for sites like Sitefinity that are slow to warmup we should delay and try again
+                    Log($"   - Invalid response, waiting 5 seconds before trying again...");
+                    Thread.Sleep(5000);
+
+                    // This prevents scrolling while retrying
+                    Console.CursorTop -= 1;
+                    Console.Write(new string(' ', Console.WindowWidth - 1));
+                    Console.SetCursorPosition(x, y);
                 }
 
                 try {
+                    int x = Console.CursorLeft;
+                    int y = Console.CursorTop;
+
                     Log(" - Submitting challenge answer");
                     AuthState.Challenges = new AuthorizeChallenge[] { Challenge };
                     _Client.SubmitChallengeAnswer(AuthState, AcmeProtocol.CHALLENGE_TYPE_HTTP, true);
-
+                    
                     // Loop while in pending state
+                    TryNumber = 2; // 2 because we submitted above, which counts as try #1
                     while (AuthState.Status == "pending") {
-                        Log("   - Authorization pending, waiting 5 seconds...");
+                        Log("   - Authorization pending, waiting 5 seconds before trying again...");
                         Thread.Sleep(5000);
-                        Log(" - Refreshing authorization status");
+
+                        // This prevents scrolling while retrying
+                        Console.CursorTop -= 1;
+                        Console.Write(new string(' ', Console.WindowWidth - 1));
+                        Console.SetCursorPosition(x, y);
+
+                        Log($" - Refreshing authorization status (Try #{TryNumber++})");
                         AuthState = _Client.RefreshIdentifierAuthorization(AuthState);
                     }
 
@@ -173,10 +208,14 @@ namespace LetsEncrypt.ACME.Simple {
                         _AuthorizedIdentifiers.Add(binding.Hostname, (DateTime)AuthState.Expires);
                     } else if (AuthState.Status == "invalid") {
                         // Prompt to see if we're going to fix and retry
+                        Console.WriteLine("   - LetsEncrypt Uri:");
+                        Console.WriteLine($"     {AuthState.Uri}");
                         Console.WriteLine("   - Check the URL above to see if it loads correctly");
-                        Console.WriteLine("     If the site does a redirect, it may need to be disabled"); // TODOX Check how to disable just for .well-known
+                        Console.WriteLine("     If the site does a redirect, it may need to be disabled");
+                        Console.WriteLine("     (The LetsEncrypt script contains 'letsencrypt.org' in the user-agent,");
+                        Console.WriteLine("      so you could disable rewrite rules for that user-agent fragment)");
                         Console.WriteLine($"     Hit Y to try again or N to skip creating a cert for {binding.IPAddress}");
-                        if (PromptYesNo()) return Authorize(binding);
+                        if (PromptYesNo()) goto RetryAfterInvalidAuthorization; // Suck it goto haters
                     }
 
                     return (AuthState.Status == "valid");
@@ -354,7 +393,7 @@ namespace LetsEncrypt.ACME.Simple {
 
                     return crtPfxFile;
                 } else {
-                    throw new Exception($"Certificate request status = {certRequ.StatusCode}");
+                    throw new Exception($"Certificate request status = {certRequ.StatusCode}, uri = {certRequ.Uri}");
                 }
             } else {
                 // TODOX Find the newest certificate for this IP on disk
