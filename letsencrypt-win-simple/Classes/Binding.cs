@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Reflection;
-
-namespace LetsEncrypt.ACME.Simple
-{
+﻿namespace LetsEncrypt.ACME.Simple {
     public class Binding
     {
         public string Hostname { get; set; }
