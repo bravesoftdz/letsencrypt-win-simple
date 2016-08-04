@@ -106,6 +106,7 @@ namespace LetsEncrypt.ACME.Simple {
             Console.WriteLine();
             Console.WriteLine("Press enter to continue.");
             Console.ReadLine();
+            Globals.LogOpen();
         }
     }
 }

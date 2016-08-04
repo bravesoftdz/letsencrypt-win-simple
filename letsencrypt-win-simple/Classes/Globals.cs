@@ -27,8 +27,16 @@ namespace LetsEncrypt.ACME.Simple {
         public static void Log(string message = "") {
             Console.WriteLine(message.Replace(AppDomain.CurrentDomain.BaseDirectory, "")); // Convert absolute filenames to relative filenames when outputting to screen
             if (!string.IsNullOrWhiteSpace(Config.Path)) {
-                File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "letsencrypt.log"), message.Trim() + Environment.NewLine);
+                File.AppendAllText(Path.Combine(Config.Path, "letsencrypt.log"), message.Trim() + Environment.NewLine);
             }
+        }
+
+        public static void LogOpen() {
+            Process.Start(Path.Combine(Config.Path, "letsencrypt.log"));
+        }
+
+        public static void LogReset() {
+            File.Delete(Path.Combine(Config.Path, "letsencrypt.log"));
         }
 
         public static bool ParseOptions(string[] args) {
@@ -59,9 +67,10 @@ namespace LetsEncrypt.ACME.Simple {
 
             // Create config directory
             Config.Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Globals.CleanFilename(Config.BaseUri));
+            Directory.CreateDirectory(Config.Path);
+            Globals.LogReset();
             Globals.Log($"Config path: {Config.Path}");
             Globals.Log();
-            Directory.CreateDirectory(Config.Path);
 
             // Confirm options before continuing
             Globals.Log(Config.Options.RunMode.ToString().ToUpper() + " MODE");
@@ -138,7 +147,21 @@ namespace LetsEncrypt.ACME.Simple {
                         }
                     }
                 } catch (WebException wex) {
-                    Globals.Log($"   - WEB EXCEPTION ({wex.Status}): {wex.Message}");
+                    if (wex.Response is HttpWebResponse) {
+                        var Response = (HttpWebResponse)wex.Response;
+                        if (Response.StatusCode == HttpStatusCode.NotFound) {
+                            Globals.Log($"   - HTTP EXCEPTION ({Response.StatusCode}): {wex.Message} -- Fix the problem and hit a key to try again");
+                            Console.ReadKey();
+                            Console.CursorTop -= 1;
+                            Console.Write(new string(' ', Console.WindowWidth));
+                            Console.CursorTop -= 2;
+                            Console.Write(new string(' ', Console.WindowWidth));
+                        } else {
+                            Globals.Log($"   - HTTP EXCEPTION ({Response.StatusCode}): {wex.Message}");
+                        }
+                    } else {
+                        Globals.Log($"   - WEB EXCEPTION ({wex.Status}): {wex.Message}");
+                    }
                 } catch (Exception ex) {
                     Globals.Log($"   - EXCEPTION: {ex.Message}");
                 }

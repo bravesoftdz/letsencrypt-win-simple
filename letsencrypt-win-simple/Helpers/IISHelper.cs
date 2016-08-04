@@ -90,7 +90,7 @@ namespace LetsEncrypt.ACME.Simple {
                                         if (Version.Major >= 8) ExistingHTTPSBinding.SetAttributeValue("sslFlags", 0); // Disable SNI support
                                     } else {
                                         Console.ForegroundColor = ConsoleColor.Yellow;
-                                        Globals.Log($" * If I wasn't running in {Config.Options.RunMode} mode, I'd be replacing the binding for {ExistingHTTPSBinding} right now");
+                                        Globals.Log($" * If I wasn't running in {Config.Options.RunMode} mode, I'd be updating the binding for {ExistingHTTPSBinding} right now");
                                         Console.ResetColor();
                                     }
                                 }

@@ -59,6 +59,13 @@ namespace LetsEncrypt.ACME.Simple {
                     AuthState.Challenges = new AuthorizeChallenge[] { Challenge };
                     _Client.SubmitChallengeAnswer(AuthState, AcmeProtocol.CHALLENGE_TYPE_HTTP, true);
 
+                    // Give a quick 1 second delay before refreshing -- then we'll loop with a "nicer" 5 second delay if we're still pending
+                    if (AuthState.Status == "pending") {
+                        Thread.Sleep(1000);
+                        Globals.Log($" - Checking authorization status");
+                        AuthState = _Client.RefreshIdentifierAuthorization(AuthState);
+                    }
+
                     // Loop while in pending state
                     int TryNumber = 2; // 2 because we submitted above, which counts as try #1
                     while (AuthState.Status == "pending") {
@@ -88,6 +95,7 @@ namespace LetsEncrypt.ACME.Simple {
                         Console.WriteLine("      so you could disable rewrite rules for that user-agent fragment)");
                         Console.WriteLine($"     Hit Y to try again or N to skip creating a cert for {binding.IPAddress}");
                         if (Globals.PromptYesNo()) goto RetryAfterInvalidAuthorization; // Suck it goto haters
+                        // TODOX Add options for (1) to load challenge url and (2) for LetEncrypt info url
                     }
 
                     return (AuthState.Status == "valid");
@@ -104,9 +112,12 @@ namespace LetsEncrypt.ACME.Simple {
             if (Globals.ShouldCreateCertificate()) {
                 LoadAuthorizedIdentifiers();
                 foreach (var Binding in bindings) {
-                    Result &= AuthorizeBinding(Binding);
+                    if (AuthorizeBinding(Binding)) {
+                        SaveAuthorizedIdentifiers();
+                    } else {
+                        Result = false;
+                    }
                 }
-                SaveAuthorizedIdentifiers();
             }
 
             return Result;
@@ -321,9 +332,7 @@ namespace LetsEncrypt.ACME.Simple {
         }
 
         private void SaveAuthorizedIdentifiers() {
-            Globals.Log();
-            Globals.Log($"Saving {_AuthorizedIdentifiersJsonPath}");
-            File.WriteAllText(_AuthorizedIdentifiersJsonPath, JsonConvert.SerializeObject(_AuthorizedIdentifiers));
+            File.WriteAllText(_AuthorizedIdentifiersJsonPath, JsonConvert.SerializeObject(_AuthorizedIdentifiers, Formatting.Indented));
         }
 
         #region IDisposable Support
