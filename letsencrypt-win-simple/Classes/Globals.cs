@@ -9,6 +9,7 @@ using System.Threading;
 
 namespace LetsEncrypt.ACME.Simple {
     enum RunMode {
+        Authorize,
         CreateCert,
         InstallCert,
         Production,
@@ -47,6 +48,9 @@ namespace LetsEncrypt.ACME.Simple {
                 // Output extra information about how the runmode option works
                 Console.WriteLine("RunMode Options (case sensitive!):");
                 Console.WriteLine();
+                Console.WriteLine(" --runmode Authorize");
+                Console.WriteLine("   Authorizes hostnames only (no create, install, or binding update)");
+                Console.WriteLine();
                 Console.WriteLine(" --runmode CreateCert");
                 Console.WriteLine("   Creates a production cert, doesn't install it, doesn't update bindings");
                 Console.WriteLine();
@@ -75,6 +79,7 @@ namespace LetsEncrypt.ACME.Simple {
             // Confirm options before continuing
             Globals.Log(Config.Options.RunMode.ToString().ToUpper() + " MODE");
             Globals.Log($"  - ACME Server: {Config.BaseUri}");
+            Globals.Log("  - Hostnames " + (Globals.ShouldAuthorizeHostnames() ? "WILL" : "WON'T") + " be authorized");
             Globals.Log("  - A certificate " + (Globals.ShouldCreateCertificate() ? "WILL" : "WON'T") + " be generated for each unique IP address");
             Globals.Log("  - The certificates " + (Globals.ShouldInstallCertificate() ? "WILL" : "WON'T") + " be installed to the cerificate store" + (Config.Options.RunMode == RunMode.InstallCert ? "*" : ""));
             Globals.Log("  - The server's IIS bindings " + (Globals.ShouldUpdateBindings() ? "WILL" : "WON'T") + " be updated to use the certificates" + (Config.Options.RunMode == RunMode.InstallCert ? "*" : ""));
@@ -101,10 +106,22 @@ namespace LetsEncrypt.ACME.Simple {
             }
         }
 
+        public static bool ShouldAuthorizeHostnames() {
+            switch (Config.Options.RunMode) {
+                case RunMode.Authorize: return true; // Authorize should authorize hostnames
+                case RunMode.CreateCert: return true; // CreateCert should authorize hostnames
+                case RunMode.InstallCert: return false; // InstallCert should not authorize hostnames
+                case RunMode.Production: return true; // Production should authorize hostnames
+                case RunMode.Staging: return true; // Staging should authorize hostnames
+                default: throw new ArgumentOutOfRangeException("Unexpected RunMode: " + Config.Options.RunMode);
+            }
+        }
+
         public static bool ShouldCreateCertificate() {
             switch (Config.Options.RunMode) {
+                case RunMode.Authorize: return false; // Authorize should not generate a certificate
                 case RunMode.CreateCert: return true; // CreateCert should generate a certificate
-                case RunMode.InstallCert: return false; // InstallCert should note generate a certificate
+                case RunMode.InstallCert: return false; // InstallCert should not generate a certificate
                 case RunMode.Production: return true; // Production should generate a certificate
                 case RunMode.Staging: return true; // Staging should generate a certificate
                 default: throw new ArgumentOutOfRangeException("Unexpected RunMode: " + Config.Options.RunMode);
@@ -113,6 +130,7 @@ namespace LetsEncrypt.ACME.Simple {
 
         public static bool ShouldInstallCertificate() {
             switch (Config.Options.RunMode) {
+                case RunMode.Authorize: return false; // Authorize should not install a certificate
                 case RunMode.CreateCert: return false; // CreateCert should not install a certificate
                 case RunMode.InstallCert: return true; // InstallCert should install a certificate
                 case RunMode.Production: return true; // Production should install a certificate
@@ -123,6 +141,7 @@ namespace LetsEncrypt.ACME.Simple {
 
         public static bool ShouldUpdateBindings() {
             switch (Config.Options.RunMode) {
+                case RunMode.Authorize: return false; // Authorize should not update bindings
                 case RunMode.CreateCert: return false; // CreateCert should not update bindings
                 case RunMode.InstallCert: return true; // InstallCert should update bindings
                 case RunMode.Production: return true; // Production should update bindings

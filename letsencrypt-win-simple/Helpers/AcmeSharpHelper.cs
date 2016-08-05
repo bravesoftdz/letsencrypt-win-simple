@@ -108,12 +108,11 @@ namespace LetsEncrypt.ACME.Simple {
         public bool AuthorizeBindings(List<Binding> bindings) {
             bool Result = true;
 
-            // Only need to go through the hassle of authorizing if we're going to be creating a certificate
-            if (Globals.ShouldCreateCertificate()) {
+            if (Globals.ShouldAuthorizeHostnames()) {
                 LoadAuthorizedIdentifiers();
                 foreach (var Binding in bindings) {
                     if (AuthorizeBinding(Binding)) {
-                        SaveAuthorizedIdentifiers();
+                        SaveAuthorizedIdentifiers(); // todox likely saves too often, ie even when cached auth exists
                     } else {
                         Result = false;
                     }
