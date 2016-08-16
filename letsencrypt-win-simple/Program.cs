@@ -1,4 +1,7 @@
-﻿using ACMESharp;
+﻿// TODOX First domain is 429'ing, and then subsequent are 400'ing.  Maybe loop and create a unique client for each IP address?
+// TODOX Store the lowercase alpha-sorted hostnames used when creating a given certificate, so if the list hasn't changed a new cert isn't requested again within an X day period
+//       (avoids their "5 duplicate certs per week" rate limit)
+using ACMESharp;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -33,15 +36,16 @@ namespace LetsEncrypt.ACME.Simple {
                 // Parse command-line options and confirm user wants to continue with the selected options
                 if (!Globals.ParseOptions(args)) return;
 
-                // Initialize the AcmeSharp library
-                AcmeSharpHelper.Instance.Init();
-
                 // Get a listing of all the IIS bindings
                 List<Binding> Bindings = IIS.GetBindings();
                 if (Bindings.Count > 0) {
                     // Get a listing of the unique IP addresses used by the various bindings
                     var UniqueIPAddresses = Bindings.Select(x => x.IPAddress).Distinct();
                     foreach (var UniqueIPAddress in UniqueIPAddresses) {
+                        // Initialize the AcmeSharp library
+                        var ASH = new AcmeSharpHelper();
+                        ASH.Init();
+
                         Globals.Log();
                         Globals.Log($"Handling {UniqueIPAddress}");
 
@@ -53,9 +57,9 @@ namespace LetsEncrypt.ACME.Simple {
                                 Globals.Log($" - IP {UniqueIPAddress} has too many hosts for a SAN certificate.  Let's Encrypt currently has a maximum of 100 alternative names per certificate.");
                             } else {
                                 // Try to authorize all the hosts
-                                if (AcmeSharpHelper.Instance.AuthorizeBindings(ThisIPsBindings)) {
+                                if (ASH.AuthorizeBindings(ThisIPsBindings)) {
                                     // Generate the certificate
-                                    string PfxFilename = AcmeSharpHelper.Instance.RequestCertificateAndConvertToPfx(ThisIPsBindings);
+                                    string PfxFilename = ASH.RequestCertificateAndConvertToPfx(ThisIPsBindings);
                                     if (File.Exists(PfxFilename)) {
                                         // Install the certificate into the WebHost store
                                         X509Store Store;

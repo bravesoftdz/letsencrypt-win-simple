@@ -13,8 +13,6 @@ using System.Threading;
 
 namespace LetsEncrypt.ACME.Simple {
     class AcmeSharpHelper : IDisposable {
-        public static AcmeSharpHelper Instance = new AcmeSharpHelper();
-
         private Dictionary<string, DateTime> _AuthorizedIdentifiers;
         private string _AuthorizedIdentifiersJsonPath;
         private AcmeClient _Client;
@@ -26,12 +24,11 @@ namespace LetsEncrypt.ACME.Simple {
         private bool AuthorizeBinding(Binding binding) {
             RetryAfterInvalidAuthorization: // If LetsEncrypt says a challenge is invalid, and the user hits Y to retry, it'll jump back up here
 
-            Globals.Log();
-            Globals.Log($"Authorizing hostname {binding.Hostname} via {AcmeProtocol.CHALLENGE_TYPE_HTTP}");
             if (_AuthorizedIdentifiers.ContainsKey(binding.Hostname)) {
-                Globals.Log(" - Skipping, existing auth doesn't expire until " + _AuthorizedIdentifiers[binding.Hostname].ToLocalTime());
                 return true;
             } else {
+                Globals.Log();
+                Globals.Log($"Authorizing hostname {binding.Hostname} via {AcmeProtocol.CHALLENGE_TYPE_HTTP}");
                 Globals.Log(" - Decoding challenge");
                 var AuthState = _Client.AuthorizeIdentifier(binding.Hostname);
                 var Challenge = _Client.DecodeChallenge(AuthState, AcmeProtocol.CHALLENGE_TYPE_HTTP);
@@ -242,6 +239,8 @@ namespace LetsEncrypt.ACME.Simple {
             var crtPfxFile = Path.Combine(Config.Path, $"{bindings[0].IPAddress}-all.pfx");
 
             if (Globals.ShouldCreateCertificate()) {
+                // TODOX Should check if the requested certificate (lowercase and sort hostnames) was issued in previous 10 days
+
                 var cp = CertificateProvider.GetProvider();
                 var rsaPkp = new RsaPrivateKeyParams();
                 try {
@@ -319,6 +318,8 @@ namespace LetsEncrypt.ACME.Simple {
                     }
 
                     cp.Dispose();
+
+                    // TODOX Should store that the requested certificate (lowercase and sort hostnames) was issued
 
                     return crtPfxFile;
                 } else {
